@@ -28,6 +28,12 @@ val posthogHost: String = project.findProperty("POSTHOG_HOST") as String? ?: Sys
 val supabaseUrl: String = project.findProperty("SUPABASE_URL") as String? ?: System.getenv("SUPABASE_URL") ?: "https://your-project.supabase.co"
 val supabaseKey: String = project.findProperty("SUPABASE_KEY") as String? ?: System.getenv("SUPABASE_KEY") ?: ""
 
+val localProperties = Properties()
+val localPropertiesFile = rootProject.file("local.properties")
+if (localPropertiesFile.exists()) {
+    localPropertiesFile.inputStream().use { localProperties.load(it) }
+}
+
 room {
     schemaDirectory("$projectDir/schemas")
 }
@@ -60,14 +66,20 @@ android {
         versionName = "0.7.2"
 
         buildConfigField("boolean", "GOLD", "false")
-        fun secret(name: String) =
-            project.findProperty(name) as String? ?: System.getenv(name) ?: ""
 
-        buildConfigField("String", "POSTHOG_API_KEY", "\"${secret("POSTHOG_API_KEY")}\"")
-        buildConfigField("String", "POSTHOG_HOST",  "\"${secret("POSTHOG_HOST")}\"")
-        buildConfigField("String", "SUPABASE_URL",  "\"${secret("SUPABASE_URL")}\"")
-        buildConfigField("String", "SUPABASE_KEY",  "\"${secret("SUPABASE_KEY")}\"")
-        buildConfigField("String", "STEAMGRIDDB_API_KEY", "\"${secret("STEAMGRIDDB_API_KEY")}\"")
+        fun getBuildSecret(name: String): String {
+            val value = project.findProperty(name)?.toString()
+                ?: localProperties.getProperty(name)
+                ?: System.getenv(name)
+                ?: ""
+            return "\"$value\""
+        }
+
+        buildConfigField("String", "POSTHOG_API_KEY", getBuildSecret("POSTHOG_API_KEY"))
+        buildConfigField("String", "POSTHOG_HOST", getBuildSecret("POSTHOG_HOST"))
+        buildConfigField("String", "SUPABASE_URL", getBuildSecret("SUPABASE_URL"))
+        buildConfigField("String", "SUPABASE_KEY", getBuildSecret("SUPABASE_KEY"))
+        buildConfigField("String", "STEAMGRIDDB_API_KEY", getBuildSecret("STEAMGRIDDB_API_KEY"))
         val iconValue = "@mipmap/ic_launcher"
         val iconRoundValue = "@mipmap/ic_launcher_round"
         manifestPlaceholders.putAll(
@@ -81,21 +93,6 @@ android {
             abiFilters.addAll(listOf("arm64-v8a", "armeabi-v7a"))
         }
 
-        // Localization support - specify which languages to include
-        resourceConfigurations += listOf(
-            "en",      // English (default)
-            "es",      // Spanish
-            "da",      // Danish
-            "pt-rBR",  // Portuguese (Brazilian)
-            "zh-rTW",  // Traditional Chinese
-            "zh-rCN",  // Simplified Chinese
-            "fr",      // French
-            "de",      // German
-            "uk",      // Ukrainian
-            "it",      // Italian
-            "ro",      // Română
-            // TODO: Add more languages here using the ISO 639-1 locale code with regional qualifiers (e.g., "pt-rPT" for European Portuguese)
-        )
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
@@ -150,6 +147,22 @@ android {
 
     kotlinOptions {
         jvmTarget = "17"
+    }
+
+    androidResources {
+        localeFilters += listOf(
+            "en",
+            "es",
+            "da",
+            "pt-rBR",
+            "zh-rTW",
+            "zh-rCN",
+            "fr",
+            "de",
+            "uk",
+            "it",
+            "ro",
+        )
     }
 
     buildFeatures {
