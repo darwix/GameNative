@@ -851,6 +851,7 @@ fun XServerScreen(
 
                             setupWineSystemFiles(
                                 context,
+                                appId,
                                 firstTimeBoot,
                                 xServerView!!.getxServer().screenInfo,
                                 xServerState,
@@ -2066,6 +2067,13 @@ private fun getWineStartCommand(
             }
             val params = result.getOrNull() ?: listOf()
             Timber.tag("XServerScreen").i("Got ${params.size} Epic launch parameters")
+
+            // Inject Epic Games specific environment variables
+            val epicEnvVars = app.gamenative.service.epic.EpicGameLauncher.getEpicEnvironmentVariables(game)
+            for ((key, value) in epicEnvVars) {
+                envVars.put(key, value)
+            }
+
             params
         }
         // Set working directory to the folder containing the executable
@@ -2657,6 +2665,7 @@ private fun extractx86_64InputDlls(context: Context, container: Container) {
 
 private fun setupWineSystemFiles(
     context: Context,
+    appId: String,
     firstTimeBoot: Boolean,
     screenInfo: ScreenInfo,
     xServerState: MutableState<XServerState>,
@@ -2730,6 +2739,10 @@ private fun setupWineSystemFiles(
 
     if (container.isLaunchRealSteam){
         extractSteamFiles(context, container, onExtractFileListener)
+    }
+
+    if (ContainerUtils.extractGameSourceFromContainerId(appId) == GameSource.EPIC) {
+        WineUtils.setupEpicRegistry(container)
     }
 
     val desktopTheme = container.desktopTheme

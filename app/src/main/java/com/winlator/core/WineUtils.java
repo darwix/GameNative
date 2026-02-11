@@ -388,6 +388,36 @@ public abstract class WineUtils {
         return Collections.unmodifiableList(names);
     }
 
+    public static void setupEpicRegistry(Container container) {
+        File userRegFile = new File(container.getRootDir(), ".wine/user.reg");
+        File systemRegFile = new File(container.getRootDir(), ".wine/system.reg");
+
+        try (WineRegistryEditor registryEditor = new WineRegistryEditor(userRegFile)) {
+            registryEditor.setStringValue("Software\\Epic Games\\Launcher", "AppDataFolder", "C:\\ProgramData\\Epic\\EpicGamesLauncher\\Data");
+        }
+
+        try (WineRegistryEditor registryEditor = new WineRegistryEditor(systemRegFile)) {
+            registryEditor.setStringValue("Software\\Epic Games\\Unreal Engine\\InstallHD", "InstallDir", "C:\\Program Files (x86)\\Epic Games\\Launcher\\Engine\\Binaries\\Win64\\");
+            registryEditor.setStringValue("Software\\WOW6432Node\\Epic Games\\Unreal Engine\\InstallHD", "InstallDir", "C:\\Program Files (x86)\\Epic Games\\Launcher\\Engine\\Binaries\\Win64\\");
+        }
+
+        // Create dummy directories and files that some games check for
+        File programDataEpic = new File(container.getRootDir(), ".wine/drive_c/ProgramData/Epic/EpicGamesLauncher/Data");
+        if (!programDataEpic.exists()) programDataEpic.mkdirs();
+
+        File launcherDir = new File(container.getRootDir(), ".wine/drive_c/Program Files (x86)/Epic Games/Launcher/Engine/Binaries/Win64");
+        if (!launcherDir.exists()) launcherDir.mkdirs();
+
+        File launcherExe = new File(launcherDir, "EpicGamesLauncher.exe");
+        if (!launcherExe.exists()) {
+            try {
+                launcherExe.createNewFile();
+            } catch (java.io.IOException e) {
+                Timber.e(e, "Failed to create dummy EpicGamesLauncher.exe");
+            }
+        }
+    }
+
     public static void changeServicesStatus(Container container, boolean onlyEssential) {
         final String[] services = SERVICE_DEFAULTS;
         File systemRegFile = new File(container.getRootDir(), ".wine/system.reg");

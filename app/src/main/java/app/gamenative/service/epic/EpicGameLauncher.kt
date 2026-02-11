@@ -171,6 +171,18 @@ object EpicGameLauncher {
     }
 
     /**
+     * Get Epic Games specific environment variables
+     * These help simulate the official Epic Games Launcher environment
+     */
+    fun getEpicEnvironmentVariables(game: EpicGame): Map<String, String> {
+        val env = mutableMapOf<String, String>()
+        env["EpicPortal"] = "1"
+        env["EpicGamesLauncherPath"] = "C:\\Program Files (x86)\\Epic Games\\Launcher\\Engine\\Binaries\\Win64\\EpicGamesLauncher.exe"
+        env["EpicGamesLauncherVersion"] = "11.0.1"
+        return env
+    }
+
+    /**
      * Clean up temporary ownership token files after game exits
      */
     fun cleanupOwnershipTokens(context: Context) {
