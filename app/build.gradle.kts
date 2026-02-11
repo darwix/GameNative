@@ -9,7 +9,6 @@ plugins {
     alias(libs.plugins.jetbrains.serialization)
     alias(libs.plugins.kotlinter)
     alias(libs.plugins.ksp)
-    alias(libs.plugins.secrets.gradle)
     alias(libs.plugins.room)
 }
 
@@ -20,19 +19,28 @@ val keystoreProperties: Properties? = if (keystorePropertiesFile.exists()) {
     }
 } else null
 
-// Add PostHog API key and host as build-time variables
-val posthogApiKey: String = project.findProperty("POSTHOG_API_KEY") as String? ?: System.getenv("POSTHOG_API_KEY") ?: ""
-val posthogHost: String = project.findProperty("POSTHOG_HOST") as String? ?: System.getenv("POSTHOG_HOST") ?: "https://us.i.posthog.com"
-
-// Add Supabase URL and key as build-time variables
-val supabaseUrl: String = project.findProperty("SUPABASE_URL") as String? ?: System.getenv("SUPABASE_URL") ?: "https://your-project.supabase.co"
-val supabaseKey: String = project.findProperty("SUPABASE_KEY") as String? ?: System.getenv("SUPABASE_KEY") ?: ""
-
 val localProperties = Properties()
 val localPropertiesFile = rootProject.file("local.properties")
 if (localPropertiesFile.exists()) {
     localPropertiesFile.inputStream().use { localProperties.load(it) }
 }
+
+fun getSecret(name: String, defaultValue: String = ""): String {
+    return project.findProperty(name)?.toString()
+        ?: localProperties.getProperty(name)
+        ?: System.getenv(name)
+        ?: defaultValue
+}
+
+// Add PostHog API key and host as build-time variables
+val posthogApiKey: String = getSecret("POSTHOG_API_KEY")
+val posthogHost: String = getSecret("POSTHOG_HOST", "https://us.i.posthog.com")
+
+// Add Supabase URL and key as build-time variables
+val supabaseUrl: String = getSecret("SUPABASE_URL", "https://your-project.supabase.co")
+val supabaseKey: String = getSecret("SUPABASE_KEY")
+
+val steamGridDbApiKey: String = getSecret("STEAMGRIDDB_API_KEY")
 
 room {
     schemaDirectory("$projectDir/schemas")
@@ -66,20 +74,26 @@ android {
         versionName = "0.7.2"
 
         buildConfigField("boolean", "GOLD", "false")
+        buildConfigField("String", "POSTHOG_API_KEY", "\"$posthogApiKey\"")
+        buildConfigField("String", "POSTHOG_HOST", "\"$posthogHost\"")
+        buildConfigField("String", "SUPABASE_URL", "\"$supabaseUrl\"")
+        buildConfigField("String", "SUPABASE_KEY", "\"$supabaseKey\"")
+        buildConfigField("String", "STEAMGRIDDB_API_KEY", "\"$steamGridDbApiKey\"")
 
-        fun getBuildSecret(name: String): String {
-            val value = project.findProperty(name)?.toString()
-                ?: localProperties.getProperty(name)
-                ?: System.getenv(name)
-                ?: ""
-            return "\"$value\""
-        }
+        resourceConfigurations += listOf(
+            "en",
+            "es",
+            "da",
+            "pt-rBR",
+            "zh-rTW",
+            "zh-rCN",
+            "fr",
+            "de",
+            "uk",
+            "it",
+            "ro",
+        )
 
-        buildConfigField("String", "POSTHOG_API_KEY", getBuildSecret("POSTHOG_API_KEY"))
-        buildConfigField("String", "POSTHOG_HOST", getBuildSecret("POSTHOG_HOST"))
-        buildConfigField("String", "SUPABASE_URL", getBuildSecret("SUPABASE_URL"))
-        buildConfigField("String", "SUPABASE_KEY", getBuildSecret("SUPABASE_KEY"))
-        buildConfigField("String", "STEAMGRIDDB_API_KEY", getBuildSecret("STEAMGRIDDB_API_KEY"))
         val iconValue = "@mipmap/ic_launcher"
         val iconRoundValue = "@mipmap/ic_launcher_round"
         manifestPlaceholders.putAll(
@@ -129,8 +143,9 @@ android {
             signingConfig = signingConfigs.getByName("pluvia")
             applicationIdSuffix = ".gold"
             buildConfigField("boolean", "GOLD", "true")
-            val iconValue = "@mipmap/ic_launcher_gold"
-            val iconRoundValue = "@mipmap/ic_launcher_gold_round"
+            // Use standard icons if gold icons are missing
+            val iconValue = "@mipmap/ic_launcher"
+            val iconRoundValue = "@mipmap/ic_launcher_round"
             manifestPlaceholders.putAll(
                 mapOf(
                     "icon" to iconValue,
@@ -149,21 +164,6 @@ android {
         jvmTarget = "17"
     }
 
-    androidResources {
-        localeFilters += listOf(
-            "en",
-            "es",
-            "da",
-            "pt-rBR",
-            "zh-rTW",
-            "zh-rCN",
-            "fr",
-            "de",
-            "uk",
-            "it",
-            "ro",
-        )
-    }
 
     buildFeatures {
         compose = true
