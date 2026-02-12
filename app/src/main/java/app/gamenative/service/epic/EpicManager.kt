@@ -818,7 +818,7 @@ class EpicManager @Inject constructor(
                 if (sidecarConfig.isNotEmpty()) {
                     try {
                         val sidecarJson = JSONObject(sidecarConfig)
-                        deploymentId = sidecarJson.optString("deploymentId", null)
+                        deploymentId = sidecarJson.optString("deploymentId", "")
                     } catch (e: Exception) {
                         Timber.tag("Epic").w(e, "Failed to parse sidecar config")
                     }
@@ -944,7 +944,7 @@ class EpicManager @Inject constructor(
             val game = getGameById(appId)
 
             if (game == null) {
-                Timber.tag("Epic").w("Game not found in database: $game.appName")
+                Timber.tag("Epic").w("Game not found in database: $appId")
                 return@withContext ManifestSizes(installSize = 0L, downloadSize = 0L)
             }
 

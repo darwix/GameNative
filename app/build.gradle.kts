@@ -60,14 +60,16 @@ android {
         versionName = "0.7.2"
 
         buildConfigField("boolean", "GOLD", "false")
-        fun secret(name: String) =
-            project.findProperty(name) as String? ?: System.getenv(name) ?: ""
+        fun secret(name: String): String {
+            val value = project.findProperty(name) as String? ?: System.getenv(name) ?: ""
+            return if (value.isEmpty()) "\"\"" else "\"$value\""
+        }
 
-        buildConfigField("String", "POSTHOG_API_KEY", "\"${secret("POSTHOG_API_KEY")}\"")
-        buildConfigField("String", "POSTHOG_HOST",  "\"${secret("POSTHOG_HOST")}\"")
-        buildConfigField("String", "SUPABASE_URL",  "\"${secret("SUPABASE_URL")}\"")
-        buildConfigField("String", "SUPABASE_KEY",  "\"${secret("SUPABASE_KEY")}\"")
-        buildConfigField("String", "STEAMGRIDDB_API_KEY", "\"${secret("STEAMGRIDDB_API_KEY")}\"")
+        buildConfigField("String", "POSTHOG_API_KEY", secret("POSTHOG_API_KEY"))
+        buildConfigField("String", "POSTHOG_HOST",  secret("POSTHOG_HOST"))
+        buildConfigField("String", "SUPABASE_URL",  secret("SUPABASE_URL"))
+        buildConfigField("String", "SUPABASE_KEY",  secret("SUPABASE_KEY"))
+        buildConfigField("String", "STEAMGRIDDB_API_KEY", secret("STEAMGRIDDB_API_KEY"))
         val iconValue = "@mipmap/ic_launcher"
         val iconRoundValue = "@mipmap/ic_launcher_round"
         manifestPlaceholders.putAll(
