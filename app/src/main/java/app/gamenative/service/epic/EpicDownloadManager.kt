@@ -330,6 +330,7 @@ class EpicDownloadManager @Inject constructor(
                     isInstalled = true,
                     installPath = installPath,
                     installSize = totalInstalledSize,
+                    deploymentId = manifestData.deploymentId ?: game.deploymentId
                 )
                 epicManager.updateGame(updatedGame)
                 Timber.tag("Epic").i("Updated database: game marked as installed")

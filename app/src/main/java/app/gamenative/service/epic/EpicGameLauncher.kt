@@ -3,9 +3,13 @@ package app.gamenative.service.epic
 import android.content.Context
 import app.gamenative.data.EpicGame
 import app.gamenative.data.EpicGameToken
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import org.json.JSONObject
 import timber.log.Timber
 import java.io.File
 import java.io.IOException
+import java.util.UUID
 
 /**
  * Helper functionality for launching Epic Games with correct execution params for online verification
@@ -16,6 +20,11 @@ import java.io.IOException
  * - Managing ownership token files for DRM-protected games
  */
 object EpicGameLauncher {
+
+    data class EpicLaunchInfo(
+        val parameters: List<String>,
+        val envVars: Map<String, String> = emptyMap()
+    )
 
     /**
      * Build launch parameters for an Epic game
@@ -29,15 +38,16 @@ object EpicGameLauncher {
         game: EpicGame,
         offline: Boolean = false,
         languageCode: String = "en-US"
-    ): Result<List<String>> {
+    ): Result<EpicLaunchInfo> {
         return try {
             val params = mutableListOf<String>()
+            val envVars = mutableMapOf<String, String>()
 
             // Do offline play if offline.
             if (offline) {
                 if (game.canRunOffline) {
                     Timber.tag("EPIC").i("Launching ${game.appName} in offline mode (no authentication)")
-                    return Result.success(params)
+                    return Result.success(EpicLaunchInfo(params, envVars))
                 } else {
                     Timber.tag("EPIC").w("${game.appName} cannot run offline, will attempt online launch")
                 }
@@ -76,22 +86,29 @@ object EpicGameLauncher {
 
             // Authentication parameters
             params.add("-AUTH_LOGIN=unused")
-            params.add("-AUTH_PASSWORD=${gameToken?.authCode ?: "0"}")
+            params.add("-AUTH_PASSWORD=${gameToken.authCode}")
             params.add("-AUTH_TYPE=exchangecode")
             params.add("-epicapp=${game.appName}")
             params.add("-epicenv=Prod")
+            params.add("-epiceosenv=prod")
+            params.add("-EABackend=prod")
 
             // Epic Portal flag
             params.add("-EpicPortal")
 
             // User information parameters
-            val displayName = "GameNativeUser" //! We should adjust this later and use the user's real displayName later
-            val accountId = gameToken?.accountId ?: "0"
+            val displayName = gameToken.displayName
+            val accountId = gameToken.accountId
 
             params.add("-epicusername=$displayName")
             params.add("-epicuserid=$accountId")
             params.add("-epiclocale=$languageCode")
             params.add("-epicsandboxid=${game.namespace}")
+
+            // Add deploymentId if available
+            if (game.deploymentId.isNotEmpty()) {
+                params.add("-epicdeploymentid=${game.deploymentId}")
+            }
 
             // Ownership token for DRM-protected games
             if (ownershipTokenPath != null) {
@@ -100,11 +117,24 @@ object EpicGameLauncher {
             }
 
             // Additional command-line parameters from game metadata
-            // This would come from game.metadata.customAttributes.AdditionalCommandLine -- We should take this into account if need be
-            // TODO: Do a follow-up to include additional parameters where required for some games
+            if (game.additionalCommandLine.isNotEmpty()) {
+                Timber.tag("EPIC").i("Adding additional command line: ${game.additionalCommandLine}")
+                // Simple split by space, but Legendary handles this more robustly.
+                // For now, just add them as separate parameters if they start with '-'
+                game.additionalCommandLine.split(" ").forEach {
+                    if (it.isNotEmpty()) {
+                        params.add(it)
+                    }
+                }
+            }
+
+            // Set environment variables for EOS
+            envVars["EOS_LOGIN_CREDENTIALS"] = "EXCHANGE_CODE:${gameToken.authCode}"
+            // Inform EOS SDK that it's being launched from a launcher to avoid restart loops
+            envVars["EOS_PLATFORM_CHECKFORLAUNCHERANDRESTART_ENV_VAR"] = "1"
 
             Timber.tag("EPIC").d("Built ${params.size} launch parameters for ${game.appName}")
-            Result.success(params)
+            Result.success(EpicLaunchInfo(params, envVars))
         } catch (e: Exception) {
             Timber.e(e, "Failed to build launch parameters")
             Result.failure(e)
@@ -167,6 +197,72 @@ object EpicGameLauncher {
         } catch (e: IOException) {
             Timber.tag("EPIC").e(e, "Failed to write ownership token file: ${tokenFile.absolutePath}")
             throw e
+        }
+    }
+
+    /**
+     * Create .egstore folder with manifest and mancpn files
+     * This helps games verify they are being launched from a legitimate launcher
+     */
+    suspend fun createEgStore(
+        context: Context,
+        game: EpicGame
+    ): Result<Unit> = withContext(Dispatchers.IO) {
+        try {
+            if (game.installPath.isEmpty()) {
+                return@withContext Result.failure(Exception("Install path is empty"))
+            }
+
+            val egStoreDir = File(game.installPath, ".egstore")
+            if (!egStoreDir.exists()) {
+                egStoreDir.mkdirs()
+            }
+
+            // Fetch manifest from Epic to get latest version and binary data
+            val epicManager = EpicService.getInstance()?.epicManager
+                ?: return@withContext Result.failure(Exception("EpicManager not available"))
+
+            val manifestResult = epicManager.fetchManifestFromEpic(
+                context,
+                game.namespace,
+                game.catalogId,
+                game.appName
+            )
+
+            if (manifestResult.isFailure) {
+                return@withContext Result.failure(manifestResult.exceptionOrNull() ?: Exception("Failed to fetch manifest"))
+            }
+
+            val manifestData = manifestResult.getOrNull()!!
+
+            // Update deploymentId in database if it was missing or changed
+            if (manifestData.deploymentId != null && manifestData.deploymentId != game.deploymentId) {
+                Timber.tag("EPIC").i("Updating deploymentId for ${game.appName}: ${manifestData.deploymentId}")
+                epicManager.updateGame(game.copy(deploymentId = manifestData.deploymentId))
+            }
+
+            // Consistent GUID based on appName
+            val installationGuid = UUID.nameUUIDFromBytes(game.appName.toByteArray()).toString().replace("-", "").uppercase()
+
+            // Write .manifest file
+            val manifestFile = File(egStoreDir, "$installationGuid.manifest")
+            manifestFile.writeBytes(manifestData.manifestBytes)
+
+            // Write .mancpn file (JSON format)
+            val mancpn = JSONObject().apply {
+                put("FormatVersion", 0)
+                put("AppName", game.appName)
+                put("CatalogItemId", game.catalogId)
+                put("CatalogNamespace", game.namespace)
+            }
+            val mancpnFile = File(egStoreDir, "$installationGuid.mancpn")
+            mancpnFile.writeText(mancpn.toString(4))
+
+            Timber.tag("EPIC").i("Created .egstore metadata for ${game.appName}")
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Timber.tag("EPIC").e(e, "Failed to create .egstore metadata")
+            Result.failure(e)
         }
     }
 

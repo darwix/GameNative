@@ -2057,16 +2057,32 @@ private fun getWineStartCommand(
         // The container setup in ContainerUtils maps the game install path to A: drive
         val epicCommand = "A:\\$relativePath".replace("/", "\\")
 
+        // Ensure .egstore metadata exists for EOS games
+        runBlocking {
+            Timber.tag("XServerScreen").d("Creating .egstore metadata for ${game.appName}...")
+            val egResult = EpicService.createEgStore(context, game)
+            if (egResult.isFailure) {
+                Timber.tag("XServerScreen").w(egResult.exceptionOrNull(), "Failed to create .egstore metadata (ignoring)")
+            }
+        }
+
         // Get Epic launch parameters
         Timber.tag("XServerScreen").d("Building Epic launch parameters for ${game.appName}...")
-        val runArguments: List<String> = runBlocking {
+        val launchInfo = runBlocking {
             val result = EpicService.buildLaunchParameters(context, game, false)
             if (result.isFailure) {
                 Timber.tag("XServerScreen").e(result.exceptionOrNull(), "Failed to build Epic launch parameters")
             }
-            val params = result.getOrNull() ?: listOf()
-            Timber.tag("XServerScreen").i("Got ${params.size} Epic launch parameters")
-            params
+            result.getOrNull()
+        }
+
+        val runArguments = launchInfo?.parameters ?: listOf()
+        Timber.tag("XServerScreen").i("Got ${runArguments.size} Epic launch parameters")
+
+        // Apply EOS environment variables
+        launchInfo?.envVars?.forEach { (key, value) ->
+            Timber.tag("XServerScreen").d("Setting Epic environment variable: $key=$value")
+            envVars.put(key, value)
         }
         // Set working directory to the folder containing the executable
         val executableDir = game.installPath + "/" + relativePath.substringBeforeLast("/", "")

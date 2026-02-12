@@ -428,8 +428,12 @@ class EpicService : Service() {
             game: EpicGame,
             offline: Boolean = false,
             languageCode: String = "en-US"
-        ): Result<List<String>> {
+        ): Result<EpicGameLauncher.EpicLaunchInfo> {
             return EpicGameLauncher.buildLaunchParameters(context, game, offline, languageCode)
+        }
+
+        suspend fun createEgStore(context: Context, game: EpicGame): Result<Unit> {
+            return EpicGameLauncher.createEgStore(context, game)
         }
 
         fun cleanupLaunchTokens(context: Context) {
