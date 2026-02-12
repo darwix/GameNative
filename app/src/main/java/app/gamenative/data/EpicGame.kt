@@ -126,6 +126,18 @@ data class EpicGame(
 
     @ColumnInfo("eos_app_id")
     val eosAppId: String = "",
+
+    @ColumnInfo("deployment_id", defaultValue = "")
+    val deploymentId: String = "",
+
+    @ColumnInfo("product_id", defaultValue = "")
+    val productId: String = "",
+
+    @ColumnInfo("application_id", defaultValue = "")
+    val applicationId: String = "",
+
+    @ColumnInfo("additional_command_line", defaultValue = "")
+    val additionalCommandLine: String = "",
 ) {
     /**
      * Primary image URL for the game
@@ -213,5 +225,6 @@ data class EpicDLCInfo(
 data class EpicGameToken(
     val authCode: String,           // Exchange code for -AUTH_PASSWORD parameter
     val accountId: String,          // User account ID for -epicuserid
+    val displayName: String,        // User display name for -epicusername
     val ownershipToken: String? = null,  // Optional DRM ownership token
 )

@@ -75,6 +75,7 @@ class EpicManager @Inject constructor(
         val catalogItemId: String,
         val sandboxType: String?,
         val country: String?,
+        val productId: String = "",
     )
 
     data class LibraryItemsResponse(
@@ -131,7 +132,7 @@ class EpicManager @Inject constructor(
         val registryPath: String? = null,
         val registryLocation: String? = null,
         val registryKey: String? = null,
-        val additionalCommandline: String? = null,
+        val additionalCommandLine: String? = null,
         val processNames: String? = null,
         val gameId: String? = null,
         val executableName: String? = null,
@@ -320,6 +321,7 @@ class EpicManager @Inject constructor(
                     val catalogItemId = record.getString("catalogItemId")
                     val sandboxType = record.optString("sandboxType", "")
                     val country = record.optString("country", "")
+                    val productId = record.optString("productId", "")
 
                     // Skip UE assets, private sandboxes, and broken entries
                     if (namespace == "ue" || sandboxType == "PRIVATE" || appName == "1") {
@@ -328,7 +330,7 @@ class EpicManager @Inject constructor(
                     }
 
                     // Add the basic game to the gameList.
-                    val gameInfo = ParsedLibraryItem(appName, namespace, catalogItemId, sandboxType, country)
+                    val gameInfo = ParsedLibraryItem(appName, namespace, catalogItemId, sandboxType, country, productId)
                     gameList.add(gameInfo)
                 }
                 // Get cursor for next page - stop if cursor is null or same as previous
@@ -429,7 +431,7 @@ class EpicManager @Inject constructor(
             val gameData: JSONObject? = json.optJSONObject(game.catalogItemId)
 
             if (gameData != null) {
-                val epicGame = parseGameFromCatalog(gameData, game.appName)
+                val epicGame = parseGameFromCatalog(gameData, game.appName, game.productId)
                 return@withContext Result.success(epicGame)
             } else {
                 return@withContext Result.failure(Exception("Game data not found in response"))
@@ -477,13 +479,18 @@ class EpicManager @Inject constructor(
             thirdPartyManagedProvider = getAttribute("ThirdPartyManagedProvider"),
             partnerLinkType = getAttribute("partnerLinkType"),
             executableName = getAttribute("MainWindowProcessName"),
+            additionalCommandLine = getAttribute("AdditionalCommandLine"),
         )
     }
 
     /**
      * Parse Epic catalog JSON into EpicGame object
      */
-    internal fun parseGameFromCatalog(data: JSONObject, libraryAppName: String): EpicGame {
+    internal fun parseGameFromCatalog(
+        data: JSONObject,
+        libraryAppName: String,
+        productId: String = ""
+    ): EpicGame {
         val catalogItemId = data.getString("id")
         val namespace = data.getString("namespace")
         val title = data.getString("title")
@@ -566,6 +573,10 @@ class EpicManager @Inject constructor(
         val cloudSaveEnabled = !parsedAttributes.cloudSaveFolder.isNullOrEmpty()
         val saveFolder = parsedAttributes.cloudSaveFolder ?: ""
         val executable = parsedAttributes.executableName ?: ""
+        val additionalCommandLine = parsedAttributes.additionalCommandLine ?: ""
+        val deploymentId = parsedAttributes.presenceId ?: ""
+        val applicationId = data.optString("applicationId", "")
+
         val thirdPartyApp = listOfNotNull(
             parsedAttributes.thirdPartyManagedApp,
             parsedAttributes.thirdPartyManagedProvider,
@@ -615,6 +626,10 @@ class EpicManager @Inject constructor(
             isEAManaged = isEaManaged,
             lastPlayed = 0,
             playTime = 0,
+            productId = productId,
+            applicationId = applicationId,
+            deploymentId = deploymentId,
+            additionalCommandLine = additionalCommandLine,
         )
     }
 
@@ -729,6 +744,7 @@ class EpicManager @Inject constructor(
     data class ManifestResult(
         val manifestBytes: ByteArray,
         val cdnUrls: List<CdnUrl>,
+        val deploymentId: String? = null,
     )
 
     data class CdnUrl(
@@ -793,6 +809,22 @@ class EpicManager @Inject constructor(
             }
 
             val element = elements.getJSONObject(0)
+
+            // Extract deploymentId from sidecar if available
+            var deploymentId: String? = null
+            val sidecar = element.optJSONObject("sidecar")
+            if (sidecar != null) {
+                val sidecarConfig = sidecar.optString("config", "")
+                if (sidecarConfig.isNotEmpty()) {
+                    try {
+                        val sidecarJson = JSONObject(sidecarConfig)
+                        deploymentId = sidecarJson.optString("deploymentId", "")
+                    } catch (e: Exception) {
+                        Timber.tag("Epic").w(e, "Failed to parse sidecar config")
+                    }
+                }
+            }
+
             val manifests = element.optJSONArray("manifests")
 
             if (manifests == null || manifests.length() == 0) {
@@ -893,8 +925,8 @@ class EpicManager @Inject constructor(
                 bytes
             }
 
-            Timber.tag("Epic").d("Manifest fetched with ${cdnUrls.size} CDN URLs")
-            Result.success(ManifestResult(manifestBytes, cdnUrls))
+            Timber.tag("Epic").d("Manifest fetched with ${cdnUrls.size} CDN URLs. DeploymentID: $deploymentId")
+            Result.success(ManifestResult(manifestBytes, cdnUrls, deploymentId))
         } catch (e: Exception) {
             Timber.tag("Epic").e(e, "Exception fetching manifest")
             Result.failure(e)
@@ -912,7 +944,7 @@ class EpicManager @Inject constructor(
             val game = getGameById(appId)
 
             if (game == null) {
-                Timber.tag("Epic").w("Game not found in database: $game.appName")
+                Timber.tag("Epic").w("Game not found in database: $appId")
                 return@withContext ManifestSizes(installSize = 0L, downloadSize = 0L)
             }
 

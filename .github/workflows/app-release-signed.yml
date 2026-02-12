@@ -60,13 +60,12 @@ jobs:
 
     - name: Inject credentials
       run: |
-        cat <<EOF > local.properties
-        POSTHOG_API_KEY=${{ secrets.POSTHOG_API_KEY }}
-        POSTHOG_HOST=${{ secrets.POSTHOG_HOST }}
-        STEAMGRIDDB_API_KEY=${{ secrets.STEAMGRIDDB_API_KEY }}
-        SUPABASE_URL=${{ secrets.SUPABASE_URL }}
-        SUPABASE_KEY=${{ secrets.SUPABASE_KEY }}
-        EOF
+        touch local.properties
+        [ -n "${{ secrets.POSTHOG_API_KEY }}" ] && echo "POSTHOG_API_KEY=${{ secrets.POSTHOG_API_KEY }}" >> local.properties
+        [ -n "${{ secrets.POSTHOG_HOST }}" ] && echo "POSTHOG_HOST=${{ secrets.POSTHOG_HOST }}" >> local.properties
+        [ -n "${{ secrets.STEAMGRIDDB_API_KEY }}" ] && echo "STEAMGRIDDB_API_KEY=${{ secrets.STEAMGRIDDB_API_KEY }}" >> local.properties
+        [ -n "${{ secrets.SUPABASE_URL }}" ] && echo "SUPABASE_URL=${{ secrets.SUPABASE_URL }}" >> local.properties
+        [ -n "${{ secrets.SUPABASE_KEY }}" ] && echo "SUPABASE_KEY=${{ secrets.SUPABASE_KEY }}" >> local.properties
 
     - name: Install Android SDK Build Tools
       run: |
