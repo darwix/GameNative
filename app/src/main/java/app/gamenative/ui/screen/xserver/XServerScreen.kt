@@ -1009,17 +1009,18 @@ fun XServerScreen(
             // Session creation is cheap (no IO); do it synchronously on the callback thread (main)
             if (cheatSession == null) {
                 val pid = WineProcessSnapshotHelper.readFromProc().firstOrNull()?.pid ?: 0
-                if (pid == 0) {
+                if (pid != 0) {
+                    cheatSession = app.gamenative.cheats.CheatSession(pid)
+                } else {
                     Timber.tag("XServerScreen").w("CheatToggle: no Wine process found")
-                    return@onCheatToggled
                 }
-                cheatSession = app.gamenative.cheats.CheatSession(pid)
             }
-            val session = cheatSession!!
-            scope.launch(Dispatchers.IO) {
-                session.lock(cheat)
-                withContext(Dispatchers.Main) {
-                    lockedCheatIds = lockedCheatIds + cheat.id
+            cheatSession?.let { session ->
+                scope.launch(Dispatchers.IO) {
+                    session.lock(cheat)
+                    withContext(Dispatchers.Main) {
+                        lockedCheatIds = lockedCheatIds + cheat.id
+                    }
                 }
             }
         } else {
