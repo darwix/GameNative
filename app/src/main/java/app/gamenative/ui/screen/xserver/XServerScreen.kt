@@ -481,6 +481,12 @@ fun XServerScreen(
     val hasCheats = app.gamenative.cheats.CheatRegistry.hasCheats(gameSource, appId)
     val cheatList = app.gamenative.cheats.CheatRegistry.getCheats(gameSource, appId)
 
+    DisposableEffect(Unit) {
+        onDispose {
+            cheatSession?.cleanup()
+        }
+    }
+
     fun persistFpsLimiterState() {
         container.putExtra(FPS_LIMITER_ENABLED_EXTRA, fpsLimiterEnabled)
         container.putExtra(FPS_LIMITER_TARGET_EXTRA, fpsLimiterTarget)
@@ -1000,18 +1006,19 @@ fun XServerScreen(
 
     val onCheatToggled: (app.gamenative.cheats.CheatDefinition, Boolean) -> Unit = { cheat, enabled ->
         if (enabled) {
-            scope.launch(Dispatchers.IO) {
-                val session = cheatSession ?: run {
-                    val pid = WineProcessSnapshotHelper.readFromProc().firstOrNull()?.pid ?: 0
-                    if (pid == 0) {
-                        Timber.tag("XServerScreen").w("CheatToggle: no Wine process found")
-                        return@launch
-                    }
-                    app.gamenative.cheats.CheatSession(pid)
+            // Session creation is cheap (no IO); do it synchronously on the callback thread (main)
+            if (cheatSession == null) {
+                val pid = WineProcessSnapshotHelper.readFromProc().firstOrNull()?.pid ?: 0
+                if (pid == 0) {
+                    Timber.tag("XServerScreen").w("CheatToggle: no Wine process found")
+                    return@onCheatToggled
                 }
+                cheatSession = app.gamenative.cheats.CheatSession(pid)
+            }
+            val session = cheatSession!!
+            scope.launch(Dispatchers.IO) {
                 session.lock(cheat)
                 withContext(Dispatchers.Main) {
-                    cheatSession = session
                     lockedCheatIds = lockedCheatIds + cheat.id
                 }
             }

@@ -79,16 +79,23 @@ static int mem_pwrite(pid_t pid, uint64_t addr, void *data, size_t len) {
 static void *lock_thread_fn(void *arg) {
     (void)arg;
     while (g_thread_running) {
+        /* Snapshot active entries under the mutex */
+        LockEntry snapshot[MAX_LOCKS];
+        int count = 0;
         pthread_mutex_lock(&g_mutex);
         for (int i = 0; i < MAX_LOCKS; i++) {
-            LockEntry *e = &g_locks[i];
-            if (!e->active) continue;
+            if (g_locks[i].active) snapshot[count++] = g_locks[i];
+        }
+        pthread_mutex_unlock(&g_mutex);
+
+        /* Do ptrace work outside the mutex */
+        for (int i = 0; i < count; i++) {
+            LockEntry *e = &snapshot[i];
             if (attach_stop(e->pid) == 0) {
                 mem_pwrite(e->pid, e->address, &e->value, value_size(e->type));
                 detach_cont(e->pid);
             }
         }
-        pthread_mutex_unlock(&g_mutex);
         usleep(100 * 1000);
     }
     return NULL;
