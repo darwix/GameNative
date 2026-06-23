@@ -478,8 +478,9 @@ fun XServerScreen(
     var cheatSession by remember { mutableStateOf<app.gamenative.cheats.CheatSession?>(null) }
     var lockedCheatIds by remember { mutableStateOf<Set<String>>(emptySet()) }
     val gameSource = ContainerUtils.extractGameSourceFromContainerId(appId)
-    val hasCheats = app.gamenative.cheats.CheatRegistry.hasCheats(gameSource, appId)
-    val cheatList = app.gamenative.cheats.CheatRegistry.getCheats(gameSource, appId)
+    val cheatGameId = ContainerUtils.extractGameIdFromContainerId(appId).toString()
+    val hasCheats = app.gamenative.cheats.CheatRegistry.hasCheats(gameSource, cheatGameId)
+    val cheatList = app.gamenative.cheats.CheatRegistry.getCheats(gameSource, cheatGameId)
 
     DisposableEffect(Unit) {
         onDispose {
