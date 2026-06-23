@@ -9,7 +9,7 @@ class CheatSession(private val pid: Int) {
     fun lock(cheat: CheatDefinition) {
         val moduleBase = resolveModuleBase(pid, cheat.moduleName)
         if (moduleBase == 0L) {
-            Timber.e("CheatSession: module '${cheat.moduleName}' not found in /proc/$pid/maps")
+            Timber.tag(TAG).e("module '${cheat.moduleName}' not found in /proc/$pid/maps")
             return
         }
         val baseAddr = moduleBase + cheat.moduleOffset
@@ -17,24 +17,24 @@ class CheatSession(private val pid: Int) {
             pid, baseAddr, cheat.pointerOffsets.toLongArray()
         )
         if (resolved == 0L) {
-            Timber.e("CheatSession: pointer chain failed for ${cheat.id}")
+            Timber.tag(TAG).e("pointer chain failed for ${cheat.id}")
             return
         }
         lockedAddresses[cheat.id] = resolved
         MemoryScannerJni.lock(pid, resolved, cheat.lockValue, cheat.valueType.ordinal)
-        Timber.d("CheatSession: locked ${cheat.id} → 0x${resolved.toString(16)}")
+        Timber.tag(TAG).d("locked ${cheat.id} → 0x${resolved.toString(16)}")
     }
 
     fun unlock(cheatId: String) {
         val address = lockedAddresses.remove(cheatId) ?: return
         MemoryScannerJni.unlock(pid, address)
-        Timber.d("CheatSession: unlocked $cheatId")
+        Timber.tag(TAG).d("unlocked $cheatId")
     }
 
     fun isLocked(cheatId: String): Boolean = lockedAddresses.containsKey(cheatId)
 
     fun cleanup() {
-        Timber.d("CheatSession: cleanup pid=$pid, active=${lockedAddresses.size}")
+        Timber.tag(TAG).d("cleanup pid=$pid, active=${lockedAddresses.size}")
         MemoryScannerJni.unlockAll(pid)
         lockedAddresses.clear()
     }
@@ -47,8 +47,12 @@ class CheatSession(private val pid: Int) {
                 }?.substringBefore('-')?.trimStart()?.toLongOrNull(16) ?: 0L
             }
         } catch (e: Exception) {
-            Timber.e(e, "CheatSession: failed to read /proc/$pid/maps")
+            Timber.tag(TAG).e(e, "failed to read /proc/$pid/maps")
             0L
         }
+    }
+
+    companion object {
+        private const val TAG = "CheatSession"
     }
 }
