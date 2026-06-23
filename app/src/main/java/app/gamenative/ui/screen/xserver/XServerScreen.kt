@@ -474,6 +474,13 @@ fun XServerScreen(
     var lsfgFlowScale by rememberSaveable(container.id) { mutableStateOf(initialLsfgSettings.flowScale) }
     var lsfgPerformanceMode by rememberSaveable(container.id) { mutableStateOf(initialLsfgSettings.performanceMode) }
 
+    // Cheat state
+    var cheatSession by remember { mutableStateOf<app.gamenative.cheats.CheatSession?>(null) }
+    var lockedCheatIds by remember { mutableStateOf<Set<String>>(emptySet()) }
+    val gameSource = ContainerUtils.extractGameSourceFromContainerId(appId)
+    val hasCheats = app.gamenative.cheats.CheatRegistry.hasCheats(gameSource, appId)
+    val cheatList = app.gamenative.cheats.CheatRegistry.getCheats(gameSource, appId)
+
     fun persistFpsLimiterState() {
         container.putExtra(FPS_LIMITER_ENABLED_EXTRA, fpsLimiterEnabled)
         container.putExtra(FPS_LIMITER_TARGET_EXTRA, fpsLimiterTarget)
@@ -991,6 +998,28 @@ fun XServerScreen(
         }
     }
 
+    val onCheatToggled: (app.gamenative.cheats.CheatDefinition, Boolean) -> Unit = { cheat, enabled ->
+        if (enabled) {
+            scope.launch(Dispatchers.IO) {
+                if (cheatSession == null) {
+                    val pid = WineProcessSnapshotHelper.readFromProc().firstOrNull()?.pid ?: 0
+                    if (pid == 0) {
+                        Timber.tag("XServerScreen").w("CheatToggle: no Wine process found")
+                        return@launch
+                    }
+                    cheatSession = app.gamenative.cheats.CheatSession(pid)
+                }
+                cheatSession!!.lock(cheat)
+                withContext(Dispatchers.Main) {
+                    lockedCheatIds = lockedCheatIds + cheat.id
+                }
+            }
+        } else {
+            cheatSession?.unlock(cheat.id)
+            lockedCheatIds = lockedCheatIds - cheat.id
+        }
+    }
+
     val onQuickMenuItemSelected: (Int) -> Boolean = { itemId ->
         when (itemId) {
             QuickMenuAction.KEYBOARD -> {
@@ -1189,6 +1218,7 @@ fun XServerScreen(
                     ),
                 )
                 imeInputReceiver?.hideKeyboard()
+                cheatSession?.cleanup()
                 // Resume processes before exiting so they can receive SIGTERM cleanly.
                 forceResumeIfSuspended()
                 exit(xServerView!!.getxServer().winHandler, frameRating, currentAppInfo, container, appId, onExit, navigateBack)
@@ -2510,6 +2540,10 @@ fun XServerScreen(
             onLsfgMultiplierChanged = ::applyLsfgMultiplier,
             onLsfgFlowScaleChanged = ::applyLsfgFlowScale,
             onLsfgPerformanceModeChanged = ::applyLsfgPerformanceMode,
+            hasCheats = hasCheats,
+            cheats = cheatList,
+            lockedCheatIds = lockedCheatIds,
+            onCheatToggled = onCheatToggled,
             onAnimationComplete = { isMenuVisible ->
                 if (isMenuVisible) {
                     pauseForOverlayIfAllowed()
