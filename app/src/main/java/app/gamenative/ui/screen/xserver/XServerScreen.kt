@@ -1001,16 +1001,17 @@ fun XServerScreen(
     val onCheatToggled: (app.gamenative.cheats.CheatDefinition, Boolean) -> Unit = { cheat, enabled ->
         if (enabled) {
             scope.launch(Dispatchers.IO) {
-                if (cheatSession == null) {
+                val session = cheatSession ?: run {
                     val pid = WineProcessSnapshotHelper.readFromProc().firstOrNull()?.pid ?: 0
                     if (pid == 0) {
                         Timber.tag("XServerScreen").w("CheatToggle: no Wine process found")
                         return@launch
                     }
-                    cheatSession = app.gamenative.cheats.CheatSession(pid)
+                    app.gamenative.cheats.CheatSession(pid)
                 }
-                cheatSession!!.lock(cheat)
+                session.lock(cheat)
                 withContext(Dispatchers.Main) {
+                    cheatSession = session
                     lockedCheatIds = lockedCheatIds + cheat.id
                 }
             }
