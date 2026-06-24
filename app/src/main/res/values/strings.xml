@@ -1616,4 +1616,10 @@
     <string name="game_launch_tip_23">Tip: If you have a Mali GPU, please use System Drivers.</string>
     <string name="game_launch_tip_24">Tip: Getting a blank screen? Try using the \"%s\" option in the menu to check if your drivers are working correctly.</string>
 
+    <!-- Cheats -->
+    <string name="cheats_tab">Cheats</string>
+    <string name="cheat_lock_active">Active</string>
+    <string name="cheat_infinite_money">Infinite Money</string>
+    <string name="cheat_infinite_stamina">Infinite Stamina</string>
+
 </resources>

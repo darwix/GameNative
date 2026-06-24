@@ -46,6 +46,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ExitToApp
 import androidx.compose.material.icons.filled.AutoFixHigh
 import androidx.compose.material.icons.filled.BarChart
+import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Fingerprint
@@ -117,6 +118,7 @@ private object QuickMenuTab {
     const val EFFECTS = 2
     const val CONTROLLER = 3
     const val TOOLS = 4
+    const val CHEATS = 5
 }
 
 data class QuickMenuItem(
@@ -266,6 +268,10 @@ fun QuickMenu(
     onLsfgFlowScaleChanged: (Float) -> Unit = {},
     onLsfgPerformanceModeChanged: (Boolean) -> Unit = {},
     onAnimationComplete: (Boolean) -> Unit = {},
+    hasCheats: Boolean = false,
+    cheats: List<app.gamenative.cheats.CheatDefinition> = emptyList(),
+    lockedCheatIds: Set<String> = emptySet(),
+    onCheatAction: (app.gamenative.cheats.CheatDefinition, app.gamenative.cheats.CheatEvent) -> Unit = { _, _ -> },
     modifier: Modifier = Modifier,
 ) {
     val exitGameItem = QuickMenuItem(
@@ -340,6 +346,7 @@ fun QuickMenu(
         QuickMenuTab.LSFG -> R.string.lsfg_tab_title
         QuickMenuTab.EFFECTS -> R.string.screen_effects
         QuickMenuTab.TOOLS -> R.string.task_manager
+        QuickMenuTab.CHEATS -> R.string.cheats_tab
         else -> R.string.quick_menu_tab_controller
     }
 
@@ -357,6 +364,7 @@ fun QuickMenu(
     val controllerItemFocusRequester = remember { FocusRequester() }
     val toolsItemFocusRequester = remember { FocusRequester() }
     val lsfgItemFocusRequester = remember { FocusRequester() }
+    val cheatsTabFocusRequester = remember { FocusRequester() }
 
     val visibleState = remember { MutableTransitionState(false) }
     visibleState.targetState = isVisible
@@ -518,6 +526,20 @@ fun QuickMenu(
                                     modifier = Modifier.width(56.dp),
                                     focusRequester = toolsTabFocusRequester,
                                 )
+                                if (hasCheats) {
+                                    QuickMenuTabButton(
+                                        icon = Icons.Default.Bolt,
+                                        contentDescriptionResId = R.string.cheats_tab,
+                                        selected = selectedTab == QuickMenuTab.CHEATS,
+                                        accentColor = PluviaTheme.colors.accentPurple,
+                                        onSelected = {
+                                            selectedTab = QuickMenuTab.CHEATS
+                                            PrefManager.quickMenuLastTab = selectedTab
+                                        },
+                                        modifier = Modifier.width(56.dp),
+                                        focusRequester = cheatsTabFocusRequester,
+                                    )
+                                }
                             }
 
                             Box(
@@ -632,6 +654,15 @@ fun QuickMenu(
                                                 )
                                             }
                                         }
+                                    }
+
+                                    QuickMenuTab.CHEATS -> {
+                                        app.gamenative.cheats.CheatQuickMenuTab(
+                                            cheats = cheats,
+                                            lockedIds = lockedCheatIds,
+                                            onAction = onCheatAction,
+                                            modifier = Modifier.fillMaxSize(),
+                                        )
                                     }
 
                                     QuickMenuTab.TOOLS -> {

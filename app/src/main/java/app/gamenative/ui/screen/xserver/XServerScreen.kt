@@ -452,6 +452,8 @@ fun XServerScreen(
     var shouldForceResumeOnMenuClose by remember { mutableStateOf(false) }
     var showQuickMenu by remember { mutableStateOf(false) }
     var quickMenuToolsVisible by remember { mutableStateOf(false) }
+    var pendingCheatToInject by remember { mutableStateOf<Pair<app.gamenative.cheats.CheatDefinition, String>?>(null) }
+    var pendingCheatTrigger by remember { mutableStateOf(0) }
     var quickMenuWineProcesses by remember { mutableStateOf<List<ProcessInfo>>(emptyList()) }
     var quickMenuWineProcessesLoading by remember { mutableStateOf(false) }
     var hasPhysicalController by remember { mutableStateOf(false) }
@@ -473,6 +475,55 @@ fun XServerScreen(
     var lsfgMultiplier by rememberSaveable(container.id) { mutableIntStateOf(initialLsfgSettings.multiplier) }
     var lsfgFlowScale by rememberSaveable(container.id) { mutableStateOf(initialLsfgSettings.flowScale) }
     var lsfgPerformanceMode by rememberSaveable(container.id) { mutableStateOf(initialLsfgSettings.performanceMode) }
+
+    // Cheat state
+    var cheatSession by remember { mutableStateOf<app.gamenative.cheats.CheatSession?>(null) }
+    var lockedCheatIds by remember { mutableStateOf<Set<String>>(emptySet()) }
+    val gameSource = ContainerUtils.extractGameSourceFromContainerId(appId)
+    val cheatGameId = runCatching { ContainerUtils.extractGameIdFromContainerId(appId).toString() }.getOrNull()
+    val hasCheats = cheatGameId != null && app.gamenative.cheats.CheatRegistry.hasCheats(gameSource, cheatGameId)
+    val cheatList = if (cheatGameId != null) app.gamenative.cheats.CheatRegistry.getCheats(gameSource, cheatGameId) else emptyList()
+    val keyedCheatDef = if (cheatGameId != null) app.gamenative.cheats.CheatRegistry.getKeyedCheats(gameSource, cheatGameId) else null
+    Timber.tag("XServerScreen").d("cheats: appId=$appId gameSource=$gameSource cheatGameId=$cheatGameId hasCheats=$hasCheats")
+
+    fun ensureCheatSession() {
+        if (cheatSession == null) {
+            val pid = WineProcessSnapshotHelper.readFromProc().firstOrNull()?.pid ?: 0
+            if (pid != 0) {
+                cheatSession = app.gamenative.cheats.CheatSession(pid, xServer = xServerView?.getxServer())
+            } else {
+                Timber.tag("XServerScreen").w("CheatToggle: no Wine process found")
+            }
+        }
+    }
+
+    LaunchedEffect(keyedCheatDef) {
+        if (keyedCheatDef != null) {
+            withContext(Dispatchers.IO) {
+                container?.rootDir?.let { keyedCheatDef.prepareSave(it) }
+            }
+        }
+    }
+
+    LaunchedEffect(pendingCheatTrigger) {
+        if (pendingCheatTrigger == 0) return@LaunchedEffect
+        val pending = pendingCheatToInject ?: return@LaunchedEffect
+        pendingCheatToInject = null
+        ensureCheatSession()
+        cheatSession?.let { session ->
+            launch(Dispatchers.IO) {
+                kotlinx.coroutines.delay(300)
+                session.lock(pending.first, pending.second)
+                withContext(Dispatchers.Main) { lockedCheatIds = lockedCheatIds + pending.first.id }
+            }
+        }
+    }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            cheatSession?.cleanup()
+        }
+    }
 
     fun persistFpsLimiterState() {
         container.putExtra(FPS_LIMITER_ENABLED_EXTRA, fpsLimiterEnabled)
@@ -991,6 +1042,24 @@ fun XServerScreen(
         }
     }
 
+    val onCheatAction: (app.gamenative.cheats.CheatDefinition, app.gamenative.cheats.CheatEvent) -> Unit = { cheat, event ->
+        when (event) {
+            is app.gamenative.cheats.CheatEvent.Toggle -> {
+                if (event.enabled) {
+                    showQuickMenu = false
+                    pendingCheatToInject = cheat to ""
+                } else {
+                    cheatSession?.unlock(cheat.id)
+                    lockedCheatIds = lockedCheatIds - cheat.id
+                }
+            }
+            is app.gamenative.cheats.CheatEvent.Execute -> {
+                showQuickMenu = false
+                pendingCheatToInject = cheat to event.value
+            }
+        }
+    }
+
     val onQuickMenuItemSelected: (Int) -> Boolean = { itemId ->
         when (itemId) {
             QuickMenuAction.KEYBOARD -> {
@@ -1189,6 +1258,7 @@ fun XServerScreen(
                     ),
                 )
                 imeInputReceiver?.hideKeyboard()
+                cheatSession?.cleanup()
                 // Resume processes before exiting so they can receive SIGTERM cleanly.
                 forceResumeIfSuspended()
                 exit(xServerView!!.getxServer().winHandler, frameRating, currentAppInfo, container, appId, onExit, navigateBack)
@@ -2510,6 +2580,10 @@ fun XServerScreen(
             onLsfgMultiplierChanged = ::applyLsfgMultiplier,
             onLsfgFlowScaleChanged = ::applyLsfgFlowScale,
             onLsfgPerformanceModeChanged = ::applyLsfgPerformanceMode,
+            hasCheats = hasCheats,
+            cheats = cheatList,
+            lockedCheatIds = lockedCheatIds,
+            onCheatAction = onCheatAction,
             onAnimationComplete = { isMenuVisible ->
                 if (isMenuVisible) {
                     pauseForOverlayIfAllowed()
@@ -2519,6 +2593,10 @@ fun XServerScreen(
                         shouldForceResumeOnMenuClose = false
                     } else if (!keepPausedForEditor) {
                         resumeIfAllowedAfterOverlay()
+                    }
+                    if (pendingCheatToInject != null) {
+                        forceResumeIfSuspended()
+                        pendingCheatTrigger++
                     }
                 }
             },
