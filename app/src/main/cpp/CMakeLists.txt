@@ -15,8 +15,7 @@ add_library(winlator SHARED
             winlator/sysvshared_memory.c
             winlator/xconnector_epoll.c
             winlator/alsa_client.c
-            winlator/patchelf_wrapper.cpp
-            winlator/memory_scanner.c)
+            winlator/patchelf_wrapper.cpp)
 
 target_link_libraries(winlator
                       log
