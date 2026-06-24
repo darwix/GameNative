@@ -452,6 +452,8 @@ fun XServerScreen(
     var shouldForceResumeOnMenuClose by remember { mutableStateOf(false) }
     var showQuickMenu by remember { mutableStateOf(false) }
     var quickMenuToolsVisible by remember { mutableStateOf(false) }
+    var pendingCheatToInject by remember { mutableStateOf<Pair<app.gamenative.cheats.CheatDefinition, String>?>(null) }
+    var pendingCheatTrigger by remember { mutableStateOf(0) }
     var quickMenuWineProcesses by remember { mutableStateOf<List<ProcessInfo>>(emptyList()) }
     var quickMenuWineProcessesLoading by remember { mutableStateOf(false) }
     var hasPhysicalController by remember { mutableStateOf(false) }
@@ -478,9 +480,44 @@ fun XServerScreen(
     var cheatSession by remember { mutableStateOf<app.gamenative.cheats.CheatSession?>(null) }
     var lockedCheatIds by remember { mutableStateOf<Set<String>>(emptySet()) }
     val gameSource = ContainerUtils.extractGameSourceFromContainerId(appId)
-    val cheatGameId = ContainerUtils.extractGameIdFromContainerId(appId).toString()
-    val hasCheats = app.gamenative.cheats.CheatRegistry.hasCheats(gameSource, cheatGameId)
-    val cheatList = app.gamenative.cheats.CheatRegistry.getCheats(gameSource, cheatGameId)
+    val cheatGameId = runCatching { ContainerUtils.extractGameIdFromContainerId(appId).toString() }.getOrNull()
+    val hasCheats = cheatGameId != null && app.gamenative.cheats.CheatRegistry.hasCheats(gameSource, cheatGameId)
+    val cheatList = if (cheatGameId != null) app.gamenative.cheats.CheatRegistry.getCheats(gameSource, cheatGameId) else emptyList()
+    val keyedCheatDef = if (cheatGameId != null) app.gamenative.cheats.CheatRegistry.getKeyedCheats(gameSource, cheatGameId) else null
+    Timber.tag("XServerScreen").d("cheats: appId=$appId gameSource=$gameSource cheatGameId=$cheatGameId hasCheats=$hasCheats")
+
+    fun ensureCheatSession() {
+        if (cheatSession == null) {
+            val pid = WineProcessSnapshotHelper.readFromProc().firstOrNull()?.pid ?: 0
+            if (pid != 0) {
+                cheatSession = app.gamenative.cheats.CheatSession(pid, xServer = xServerView?.getxServer())
+            } else {
+                Timber.tag("XServerScreen").w("CheatToggle: no Wine process found")
+            }
+        }
+    }
+
+    LaunchedEffect(keyedCheatDef) {
+        if (keyedCheatDef != null) {
+            withContext(Dispatchers.IO) {
+                container?.rootDir?.let { keyedCheatDef.prepareSave(it) }
+            }
+        }
+    }
+
+    LaunchedEffect(pendingCheatTrigger) {
+        if (pendingCheatTrigger == 0) return@LaunchedEffect
+        val pending = pendingCheatToInject ?: return@LaunchedEffect
+        pendingCheatToInject = null
+        ensureCheatSession()
+        cheatSession?.let { session ->
+            launch(Dispatchers.IO) {
+                kotlinx.coroutines.delay(300)
+                session.lock(pending.first, pending.second)
+                withContext(Dispatchers.Main) { lockedCheatIds = lockedCheatIds + pending.first.id }
+            }
+        }
+    }
 
     DisposableEffect(Unit) {
         onDispose {
@@ -1005,28 +1042,21 @@ fun XServerScreen(
         }
     }
 
-    val onCheatToggled: (app.gamenative.cheats.CheatDefinition, Boolean) -> Unit = { cheat, enabled ->
-        if (enabled) {
-            // Session creation is cheap (no IO); do it synchronously on the callback thread (main)
-            if (cheatSession == null) {
-                val pid = WineProcessSnapshotHelper.readFromProc().firstOrNull()?.pid ?: 0
-                if (pid != 0) {
-                    cheatSession = app.gamenative.cheats.CheatSession(pid)
+    val onCheatAction: (app.gamenative.cheats.CheatDefinition, app.gamenative.cheats.CheatEvent) -> Unit = { cheat, event ->
+        when (event) {
+            is app.gamenative.cheats.CheatEvent.Toggle -> {
+                if (event.enabled) {
+                    showQuickMenu = false
+                    pendingCheatToInject = cheat to ""
                 } else {
-                    Timber.tag("XServerScreen").w("CheatToggle: no Wine process found")
+                    cheatSession?.unlock(cheat.id)
+                    lockedCheatIds = lockedCheatIds - cheat.id
                 }
             }
-            cheatSession?.let { session ->
-                scope.launch(Dispatchers.IO) {
-                    session.lock(cheat)
-                    withContext(Dispatchers.Main) {
-                        lockedCheatIds = lockedCheatIds + cheat.id
-                    }
-                }
+            is app.gamenative.cheats.CheatEvent.Execute -> {
+                showQuickMenu = false
+                pendingCheatToInject = cheat to event.value
             }
-        } else {
-            cheatSession?.unlock(cheat.id)
-            lockedCheatIds = lockedCheatIds - cheat.id
         }
     }
 
@@ -2553,7 +2583,7 @@ fun XServerScreen(
             hasCheats = hasCheats,
             cheats = cheatList,
             lockedCheatIds = lockedCheatIds,
-            onCheatToggled = onCheatToggled,
+            onCheatAction = onCheatAction,
             onAnimationComplete = { isMenuVisible ->
                 if (isMenuVisible) {
                     pauseForOverlayIfAllowed()
@@ -2563,6 +2593,10 @@ fun XServerScreen(
                         shouldForceResumeOnMenuClose = false
                     } else if (!keepPausedForEditor) {
                         resumeIfAllowedAfterOverlay()
+                    }
+                    if (pendingCheatToInject != null) {
+                        forceResumeIfSuspended()
+                        pendingCheatTrigger++
                     }
                 }
             },

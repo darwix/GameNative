@@ -1,54 +1,61 @@
 package app.gamenative.cheats
 
+import app.gamenative.utils.charToXKeycode
+import com.winlator.xserver.XServer
+import com.winlator.xserver.XKeycode
 import timber.log.Timber
-import java.io.File
 
-class CheatSession(private val pid: Int) {
-    private val lockedAddresses = mutableMapOf<String, Long>()
+class CheatSession(
+    private val pid: Int,
+    private val xServer: XServer? = null,
+) {
+    private val activeInputCommands = mutableSetOf<String>()
 
-    fun lock(cheat: CheatDefinition) {
-        val moduleBase = resolveModuleBase(pid, cheat.moduleName)
-        if (moduleBase == 0L) {
-            Timber.tag(TAG).e("module '${cheat.moduleName}' not found in /proc/$pid/maps")
-            return
+    fun lock(cheat: CheatDefinition, value: String = "") {
+        val action = cheat.action as CheatAction.InputCommand
+        val keys = action.keys.map {
+            if (it is String) it.replace("{value}", value) else it
         }
-        val baseAddr = moduleBase + cheat.moduleOffset
-        val resolved = MemoryScannerJni.resolvePointerChain(
-            pid, baseAddr, cheat.pointerOffsets.toLongArray()
-        )
-        if (resolved == 0L) {
-            Timber.tag(TAG).e("pointer chain failed for ${cheat.id}")
-            return
-        }
-        lockedAddresses[cheat.id] = resolved
-        MemoryScannerJni.lock(pid, resolved, cheat.lockValue, cheat.valueType.ordinal)
-        Timber.tag(TAG).d("locked ${cheat.id} → 0x${resolved.toString(16)}")
+        typeKeys(keys)
+        if (action.type is InputCommandType.Toggle) activeInputCommands += cheat.id
+        Timber.tag(TAG).d("injected keys for ${cheat.id}")
     }
 
     fun unlock(cheatId: String) {
-        val address = lockedAddresses.remove(cheatId) ?: return
-        MemoryScannerJni.unlock(pid, address)
-        Timber.tag(TAG).d("unlocked $cheatId")
+        if (activeInputCommands.remove(cheatId)) {
+            Timber.tag(TAG).d("deactivated input command $cheatId")
+        }
     }
 
-    fun isLocked(cheatId: String): Boolean = lockedAddresses.containsKey(cheatId)
+    fun isLocked(cheatId: String): Boolean = activeInputCommands.contains(cheatId)
 
     fun cleanup() {
-        Timber.tag(TAG).d("cleanup pid=$pid, active=${lockedAddresses.size}")
-        MemoryScannerJni.unlockAll(pid)
-        lockedAddresses.clear()
+        Timber.tag(TAG).d("cleanup pid=$pid, inputCmds=${activeInputCommands.size}")
+        activeInputCommands.clear()
     }
 
-    private fun resolveModuleBase(pid: Int, moduleName: String): Long {
-        return try {
-            File("/proc/$pid/maps").useLines { lines ->
-                lines.firstOrNull { line ->
-                    line.contains(moduleName, ignoreCase = true) && line.contains("r-xp")
-                }?.substringBefore('-')?.trimStart()?.toLongOrNull(16) ?: 0L
+    private fun typeKeys(keys: List<Any>) {
+        val server = xServer ?: run { Timber.tag(TAG).e("typeKeys: no XServer"); return }
+        for (item in keys) {
+            when (item) {
+                is XKeycode -> {
+                    server.injectKeyPress(item, 0)
+                    Thread.sleep(50)
+                    server.injectKeyRelease(item)
+                    Thread.sleep(300)
+                }
+                is String -> {
+                    for (ch in item) {
+                        if (ch == '\t') { Thread.sleep(500); continue }
+                        val keycode = charToXKeycode(ch)
+                        Timber.tag(TAG).d("injectKeyPress $keycode keysym=0x${ch.code.toString(16)}")
+                        server.injectKeyPress(keycode, ch.code)
+                        Thread.sleep(30)
+                        server.injectKeyRelease(keycode)
+                        Thread.sleep(20)
+                    }
+                }
             }
-        } catch (e: Exception) {
-            Timber.tag(TAG).e(e, "failed to read /proc/$pid/maps")
-            0L
         }
     }
 

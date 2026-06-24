@@ -271,7 +271,7 @@ fun QuickMenu(
     hasCheats: Boolean = false,
     cheats: List<app.gamenative.cheats.CheatDefinition> = emptyList(),
     lockedCheatIds: Set<String> = emptySet(),
-    onCheatToggled: (app.gamenative.cheats.CheatDefinition, Boolean) -> Unit = { _, _ -> },
+    onCheatAction: (app.gamenative.cheats.CheatDefinition, app.gamenative.cheats.CheatEvent) -> Unit = { _, _ -> },
     modifier: Modifier = Modifier,
 ) {
     val exitGameItem = QuickMenuItem(
@@ -346,6 +346,7 @@ fun QuickMenu(
         QuickMenuTab.LSFG -> R.string.lsfg_tab_title
         QuickMenuTab.EFFECTS -> R.string.screen_effects
         QuickMenuTab.TOOLS -> R.string.task_manager
+        QuickMenuTab.CHEATS -> R.string.cheats_tab
         else -> R.string.quick_menu_tab_controller
     }
 
@@ -659,7 +660,7 @@ fun QuickMenu(
                                         app.gamenative.cheats.CheatQuickMenuTab(
                                             cheats = cheats,
                                             lockedIds = lockedCheatIds,
-                                            onToggle = onCheatToggled,
+                                            onAction = onCheatAction,
                                             modifier = Modifier.fillMaxSize(),
                                         )
                                     }

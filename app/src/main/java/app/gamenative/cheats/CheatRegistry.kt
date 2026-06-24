@@ -16,4 +16,7 @@ object CheatRegistry {
 
     fun hasCheats(source: GameSource, gameId: String): Boolean =
         byKey.containsKey(source to gameId)
+
+    fun getKeyedCheats(source: GameSource, gameId: String): KeyedCheatDefinition? =
+        byKey[source to gameId]
 }
