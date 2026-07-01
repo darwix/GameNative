@@ -2,6 +2,7 @@ package app.gamenative.cheats.games
 
 import app.gamenative.cheats.CheatAction
 import app.gamenative.cheats.CheatDefinition
+import app.gamenative.cheats.InputCommandType
 import app.gamenative.cheats.KeyedCheatDefinition
 import app.gamenative.data.GameSource
 import com.winlator.xserver.XKeycode
@@ -67,12 +68,77 @@ val STEAM_Cheats_413150: KeyedCheatDefinition = object : KeyedCheatDefinition {
             action = CheatAction.InputCommand(keys = listOf(XKeycode.KEY_T, "/debug iq ALL_ITEMS", XKeycode.KEY_ENTER)),
             section = "Inventory",
         ),
+        CheatDefinition(    
+            id = "upgrade_backpack",
+            label = "Upgrade Backpack (Full)",
+            action = CheatAction.InputCommand(keys = listOf(XKeycode.KEY_T, "/debug backpack 36", XKeycode.KEY_ENTER)),
+            section = "Inventory",
+        ),
+        CheatDefinition(
+            id = "give_item",
+            label = "Give Item (x999)",
+            action = CheatAction.InputCommand(
+                keys = listOf(XKeycode.KEY_T, "/debug item {value} 999", XKeycode.KEY_ENTER),
+                type = InputCommandType.FreeText(hint = "Item ID (e.g. 388)"),
+            ),
+            section = "Inventory",
+        ),
+
+        CheatDefinition(
+            id = "unlock_crafting_recipes",
+            label = "Unlock All Crafting Recipes",
+            action = CheatAction.InputCommand(keys = listOf(XKeycode.KEY_T, "/debug crafting", XKeycode.KEY_ENTER)),
+            section = "Inventory",
+        ),
+        CheatDefinition(
+            id = "unlock_cooking_recipes",
+            label = "Unlock All Cooking Recipes",
+            action = CheatAction.InputCommand(keys = listOf(XKeycode.KEY_T, "/debug cooking", XKeycode.KEY_ENTER)),
+            section = "Inventory",
+        ),
+
+        // Farm
+        CheatDefinition(
+            id = "setup_big_farm",
+            label = "Setup Big Farm",
+            action = CheatAction.InputCommand(keys = listOf(XKeycode.KEY_T, "/debug setupbigfarm", XKeycode.KEY_ENTER)),
+            section = "Farm",
+        ),
+
+        CheatDefinition(
+            id = "grow_animals",
+            label = "Grow All Animals",
+            action = CheatAction.InputCommand(keys = listOf(XKeycode.KEY_T, "/debug growanimals", XKeycode.KEY_ENTER)),
+            section = "Farm",
+        ),
+        CheatDefinition(
+            id = "befriend_animals",
+            label = "Max Animal Friendship",
+            action = CheatAction.InputCommand(keys = listOf(XKeycode.KEY_T, "/debug befriend 1000", XKeycode.KEY_ENTER)),
+            section = "Farm",
+        ),
+
+        // Fishing
+        CheatDefinition(
+            id = "catch_all_fish",
+            label = "Catch All Fish",
+            action = CheatAction.InputCommand(keys = listOf(XKeycode.KEY_T, "/debug catchallfish", XKeycode.KEY_ENTER)),
+            section = "Fishing",
+        ),
+
+        // Relationships
+        CheatDefinition(
+            id = "max_friendships",
+            label = "Max All Friendships",
+            action = CheatAction.InputCommand(keys = listOf(XKeycode.KEY_T, "/debug friendall", XKeycode.KEY_ENTER)),
+            section = "Relationships",
+        ),
 
         // Game
         CheatDefinition(
             id = "freeze_game_time",
             label = "Freeze Game Time",
-            action = CheatAction.InputCommand(keys = listOf(XKeycode.KEY_T, "/freeze", XKeycode.KEY_ENTER)),
+            action = CheatAction.InputCommand(keys = listOf(XKeycode.KEY_T, "/debug pausetime", XKeycode.KEY_ENTER)),
             section = "Game",
         ),
 
@@ -83,5 +149,12 @@ val STEAM_Cheats_413150: KeyedCheatDefinition = object : KeyedCheatDefinition {
             action = CheatAction.InputCommand(keys = listOf(XKeycode.KEY_T, "/speed 5", XKeycode.KEY_ENTER)),
             section = "Physics",
         ),
+        CheatDefinition(
+            id = "warp_home",
+            label = "Teleport Home",
+            action = CheatAction.InputCommand(keys = listOf(XKeycode.KEY_T, "/warphome", XKeycode.KEY_ENTER)),
+            section = "Physics",
+        ),
+
     )
 }

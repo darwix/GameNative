@@ -138,6 +138,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
@@ -2954,10 +2955,15 @@ class SteamService : Service(), IChallengeUrlChanged {
             val steamApps = instance?._steamApps ?: return@withContext false
 
             // ── 1. Fetch the latest app header from Steam (PICS).
-            val pics = steamApps.picsGetProductInfo(
-                apps = listOf(PICSRequest(id = appId)),
-                packages = emptyList(),
-            ).await()
+            val pics = try {
+                steamApps.picsGetProductInfo(
+                    apps = listOf(PICSRequest(id = appId)),
+                    packages = emptyList(),
+                ).await()
+            } catch (e: Exception) {
+                Timber.w("isUpdatePending: async job failed for appId=$appId: ${e.message}")
+                return@withContext false
+            }
 
             val remoteAppInfo = pics.results
                 .firstOrNull()
@@ -3557,7 +3563,11 @@ class SteamService : Service(), IChallengeUrlChanged {
     override fun onBind(intent: Intent?): IBinder? = null
 
     private fun connectToSteam() {
-        CoroutineScope(Dispatchers.Default).launch {
+        val connectExceptionHandler = CoroutineExceptionHandler { _, throwable ->
+            Timber.w(throwable, "Steam connection coroutine exception (non-fatal)")
+        }
+
+        CoroutineScope(Dispatchers.Default + connectExceptionHandler).launch {
             // this call errors out if run on the main thread
             steamClient!!.connect()
 

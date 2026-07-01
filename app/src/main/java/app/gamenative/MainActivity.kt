@@ -484,6 +484,10 @@ class MainActivity : ComponentActivity() {
 
     @SuppressLint("RestrictedApi")
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        if (event.source and android.view.InputDevice.SOURCE_GAMEPAD != 0 ||
+            event.source and android.view.InputDevice.SOURCE_JOYSTICK != 0) {
+            Timber.tag("gamepad_debug").d("dispatchKeyEvent keyCode=${event.keyCode} action=${event.action} device=${event.device?.name} source=${event.source}")
+        }
         // Log.d("MainActivity$index", "dispatchKeyEvent(${event.keyCode}):\n$event")
 
         var eventDispatched = PluviaApp.events.emit(AndroidEvent.KeyEvent(event)) { keyEvent ->

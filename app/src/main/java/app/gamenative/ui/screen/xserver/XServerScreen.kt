@@ -393,7 +393,7 @@ fun XServerScreen(
         ),
     )
 
-    val xServerState = rememberSaveable(stateSaver = XServerState.Saver) {
+    val xServerState = remember {
         mutableStateOf(
             XServerState(
                 graphicsDriver = container.graphicsDriver,
