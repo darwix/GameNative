@@ -2,6 +2,7 @@ package app.gamenative.utils
 
 import android.content.Context
 import android.os.Build
+import app.gamenative.BuildConfig
 import app.gamenative.PrefManager
 import app.gamenative.data.GameSource
 import app.gamenative.enums.Marker
@@ -14,6 +15,7 @@ import com.winlator.container.ContainerData
 import com.winlator.container.ContainerManager
 import com.winlator.core.DefaultVersion
 import com.winlator.core.FileUtils
+import com.winlator.core.KeyValueSet
 import com.winlator.core.GPUInformation
 import com.winlator.core.envvars.EnvVars
 import com.winlator.core.WineRegistryEditor
@@ -84,7 +86,8 @@ object ContainerUtils {
         } else {
             DefaultVersion.VARIANT = Container.BIONIC
             DefaultVersion.WINE_VERSION = "proton-10.0-arm64ec-2"
-            DefaultVersion.DEFAULT_GRAPHICS_DRIVER = "Wrapper"
+            DefaultVersion.DEFAULT_GRAPHICS_DRIVER =
+                if (GPUInformation.isAdrenoGPU(context)) "Wrapper" else "Wrapper-gamenative"
             DefaultVersion.DXVK = "async-1.10.3"
             DefaultVersion.VKD3D = "2.14.1"
             DefaultVersion.STEAM_TYPE = Container.STEAM_TYPE_LIGHT
@@ -287,6 +290,8 @@ object ContainerUtils {
         val shooterMode = container.isShooterMode()
         // Read gesture configuration JSON
         val gestureConfig = container.getGestureConfig()
+        // Read shooter mode configuration JSON
+        val shooterConfig = container.getShooterConfig()
         val externalDisplayMode = container.getExternalDisplayMode()
         val externalDisplaySwap = container.isExternalDisplaySwap()
 
@@ -299,6 +304,7 @@ object ContainerUtils {
             graphicsDriverConfig = container.graphicsDriverConfig,
             rendererPresentMode = container.rendererPresentMode,
             displayRenderer = container.displayRenderer,
+            xrRefreshRate = container.xrRefreshRate,
             sfCompatMode = container.sfCompatMode,
             dxwrapper = container.dxWrapper,
             dxwrapperConfig = container.dxWrapperConfig,
@@ -345,6 +351,7 @@ object ContainerUtils {
             touchscreenMode = touchscreenMode,
             shooterMode = shooterMode,
             gestureConfig = gestureConfig,
+            shooterConfig = shooterConfig,
             externalDisplayMode = externalDisplayMode,
             externalDisplaySwap = externalDisplaySwap,
             csmt = csmt,
@@ -431,6 +438,7 @@ object ContainerUtils {
                 "audioDriver" -> value?.let { updatedData.copy(audioDriver = it as? String ?: updatedData.audioDriver) } ?: updatedData
                 "wincomponents" -> value?.let { updatedData.copy(wincomponents = it as? String ?: updatedData.wincomponents) } ?: updatedData
                 "videoMemorySize" -> value?.let { updatedData.copy(videoMemorySize = it as? String ?: updatedData.videoMemorySize) } ?: updatedData
+                "launchBionicSteam" -> value?.let { updatedData.copy(launchBionicSteam = it as? Boolean ?: updatedData.launchBionicSteam) } ?: updatedData
                 else -> updatedData
             }
         }
@@ -481,6 +489,7 @@ object ContainerUtils {
         container.graphicsDriverConfig = containerData.graphicsDriverConfig
         container.rendererPresentMode = containerData.rendererPresentMode
         container.displayRenderer = containerData.displayRenderer
+        container.xrRefreshRate = containerData.xrRefreshRate
         container.sfCompatMode = containerData.sfCompatMode
         container.dxWrapper = containerData.dxwrapper
         container.dxWrapperConfig = containerData.dxwrapperConfig
@@ -523,6 +532,7 @@ object ContainerUtils {
         container.setTouchscreenMode(containerData.touchscreenMode)
         container.setShooterMode(containerData.shooterMode)
         container.setGestureConfig(containerData.gestureConfig)
+        container.setShooterConfig(containerData.shooterConfig)
         container.setExternalDisplayMode(containerData.externalDisplayMode)
         container.setExternalDisplaySwap(containerData.externalDisplaySwap)
         container.setForceDlc(containerData.forceDlc)
@@ -927,6 +937,12 @@ object ContainerUtils {
             containerData
         }
 
+        if (BuildConfig.XR_BUILD) {
+            val kvs = KeyValueSet(containerData.graphicsDriverConfig)
+            kvs.put("adrenotoolsTurnip", "0")
+            containerData = containerData.copy(graphicsDriverConfig = kvs.toString())
+        }
+
         if (Build.MANUFACTURER.equals("samsung", ignoreCase = true) && GPUInformation.isAdreno740(context)) {
             val ev = EnvVars(containerData.envVars)
             if (!ev.has("FD_DEV_FEATURES")) {
@@ -1028,11 +1044,30 @@ object ContainerUtils {
             }
         }
 
-        if (gameFolderPath != null) {
+        val resolvedGameFolderPath = if (gameSource == GameSource.CUSTOM_GAME) {
+            gameFolderPath
+        } else {
+            StorageUtils.resolveLegacyGameDir(gameFolderPath)
+        }
+
+        if (resolvedGameFolderPath != null && resolvedGameFolderPath != gameFolderPath) {
+            when (gameSource) {
+                GameSource.GOG ->
+                    GOGService.updateInstallPath(extractGameIdFromContainerId(appId).toString(), resolvedGameFolderPath)
+                GameSource.EPIC ->
+                    EpicService.updateInstallPath(extractGameIdFromContainerId(appId), resolvedGameFolderPath)
+                GameSource.AMAZON ->
+                    runCatching { extractGameIdFromContainerId(appId) }.getOrNull()
+                        ?.let { AmazonService.updateInstallPath(it, resolvedGameFolderPath) }
+                else -> {}
+            }
+        }
+
+        if (resolvedGameFolderPath != null) {
             // Check if A: drive is already mapped to the correct path
             var hasCorrectADrive = false
             for (drive in Container.drivesIterator(container.drives)) {
-                if (drive[0] == "A" && drive[1] == gameFolderPath) {
+                if (drive[0] == "A" && drive[1] == resolvedGameFolderPath) {
                     hasCorrectADrive = true
                     break
                 }
@@ -1043,7 +1078,7 @@ object ContainerUtils {
                 val currentDrives = container.drives
                 // Rebuild drives string, excluding existing A: drive and adding new one
                 val drivesBuilder = StringBuilder()
-                drivesBuilder.append("A:$gameFolderPath")
+                drivesBuilder.append("A:$resolvedGameFolderPath")
 
                 // Add all other drives (excluding A:)
                 for (drive in Container.drivesIterator(currentDrives)) {
@@ -1196,10 +1231,8 @@ object ContainerUtils {
         GameSource.GOG,
         GameSource.EPIC,
         GameSource.AMAZON,
-        -> true
-
         GameSource.CUSTOM_GAME,
-        -> false
+        -> true
     }
 
     /**
@@ -1236,7 +1269,7 @@ object ContainerUtils {
     }
 
     /**
-     * Scans the container's A: drive for all .exe files
+     * Scans the container's A: drive for all .exe and .bat files
      */
     fun scanExecutablesInADrive(drives: String): List<String> {
         val executables = mutableListOf<String>()
@@ -1257,7 +1290,7 @@ object ContainerUtils {
 
             Timber.d("Scanning for executables in A: drive: $aDrivePath")
 
-            // Recursively scan for .exe files using listFiles with depth limit.
+            // Recursively scan for .exe/.bat files using listFiles with depth limit.
             // Symlinked directories are skipped to avoid cycles (e.g. GOG ISI rootdir -> game root).
             fun scanRecursive(dir: File, baseDir: File, depth: Int = 0, maxDepth: Int = 10) {
                 if (depth > maxDepth) return
@@ -1266,7 +1299,7 @@ object ContainerUtils {
                     if (file.isDirectory) {
                         if (FileUtils.isSymlink(file)) return@forEach
                         scanRecursive(file, baseDir, depth + 1, maxDepth)
-                    } else if (file.isFile && file.name.lowercase().endsWith(".exe")) {
+                    } else if (file.isFile && (file.name.lowercase().endsWith(".exe") || file.name.lowercase().endsWith(".bat"))) {
                         // Convert to relative Windows path format
                         val relativePath = baseDir.toURI().relativize(file.toURI()).path
                         executables.add(relativePath)
@@ -1302,7 +1335,7 @@ object ContainerUtils {
      */
     fun filterExesForUnpacking(exePaths: List<String>): List<String> = exePaths.filter { path ->
         val fileName = path.substringAfterLast('/').substringAfterLast('\\').lowercase()
-        !isSystemExecutable(fileName)
+        fileName.endsWith(".exe") && !isSystemExecutable(fileName)
     }
 
     /**

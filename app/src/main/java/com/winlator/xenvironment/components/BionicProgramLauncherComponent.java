@@ -186,11 +186,10 @@ public class BionicProgramLauncherComponent extends GuestProgramLauncherComponen
 
     private int execGuestProgram() {
 
-        final int MAX_PLAYERS = 1; // old static method
+        final int MAX_PLAYERS = 4;
 
         // Get the number of enabled players directly from ControllerManager.
-        final int enabledPlayerCount = MAX_PLAYERS;
-        for (int i = 0; i < enabledPlayerCount; i++) {
+        for (int i = 0; i < MAX_PLAYERS; i++) {
             String memPath;
             if (i == 0) {
                 // Player 1 uses the original, non-numbered path that is known to work.
@@ -232,7 +231,7 @@ public class BionicProgramLauncherComponent extends GuestProgramLauncherComponen
         EnvVars envVars = new EnvVars();
 
         // Use the ControllerManager's dynamic count for the environment variable
-        envVars.put("EVSHIM_MAX_PLAYERS", String.valueOf(enabledPlayerCount));
+        envVars.put("EVSHIM_MAX_PLAYERS", String.valueOf(MAX_PLAYERS));
         if (true) {
             envVars.put("EVSHIM_SHM_ID", 1);
         }
@@ -251,6 +250,7 @@ public class BionicProgramLauncherComponent extends GuestProgramLauncherComponen
         envVars.put("HOME", imageFs.home_path);
         envVars.put("USER", ImageFs.USER);
         envVars.put("TMPDIR", rootDir.getPath() + "/usr/tmp");
+        new File(imageFs.home_path + "/.wine/drive_c" + rootDir.getPath() + "/usr/tmp").mkdirs();
         envVars.put("DISPLAY", ":0");
 
         String winePath = imageFs.getWinePath() + "/bin";
@@ -509,6 +509,11 @@ public class BionicProgramLauncherComponent extends GuestProgramLauncherComponen
         envVars.put("BREAKPAD_DUMP_LOCATION", breakpadDir);
         envVars.put("STEAM_BASE_FOLDER", steamRootLinux);
         envVars.put("ENABLE_VK_LAYER_VALVE_steam_overlay_1", "0");
+        // ISteamUtils::IsOverlayEnabled() is not engine state -- it resolves in-process to
+        // `getenv("SteamOS") ? true : dlsym(RTLD_DEFAULT, "IsOverlayEnabled")`. No overlay
+        // module is loaded here (the bionic asset set ships none), so without this it returns
+        // false and games that gate their invite/host UI on it refuse to open it.
+        envVars.put("SteamOS", "1");
         envVars.put("STEAMVIDEOTOKEN", "1");
 
         // IPC endpoints; override defaults if the MCP-hosted .so listens elsewhere
@@ -541,14 +546,6 @@ public class BionicProgramLauncherComponent extends GuestProgramLauncherComponen
             envVars.put("SteamGameId", steamAppId);
             envVars.put("SteamAppId", steamAppId);
         }
-        envVars.put("STEAM_LOG_LEVEL", "10");
-        envVars.put("STEAM_DEBUG", "1");
-        envVars.put("IPCLOGGING", "1");
-        envVars.put("STEAMNETWORKINGSOCKETS_LOG_LEVEL", "verbose");
-        envVars.put("NetworkVerbose", "1");
-        envVars.put("SteamNetworkingSockets_Verbose", "4");
-        envVars.put("SteamNetworkingSocketsLib_Verbose", "4");
-        envVars.put("DebugNetworkConnections", "1");
     }
 
     /**
@@ -587,6 +584,7 @@ public class BionicProgramLauncherComponent extends GuestProgramLauncherComponen
                 "ENABLE_VK_LAYER_VALVE_steam_overlay_1",
                 "STEAMVIDEOTOKEN",
                 "SteamUser",
+                "SteamOS",
         };
         for (String key : passthrough) {
             String val = envVars.get(key);
